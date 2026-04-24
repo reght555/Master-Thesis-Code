@@ -1,0 +1,75 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+
+def fit_model_chi2(x, y, yerr, model, p0, bounds=None, do_plot=True, xlabel='x', ylabel='y', title='Model Fit'):
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    yerr = np.asarray(yerr, dtype=float)
+    p0 = np.asarray(p0, dtype=float)
+# takes a model which is just a function you can create, P0 is the first guess for the model parameters, x, y are data and yerr is the y error.
+
+    if len(x) != len(y) or len(x) != len(yerr):
+        raise ValueError("x, y, and yerr must all have the same length.")
+
+    if np.any(yerr <= 0):
+        raise ValueError("All yerr values must be > 0.")
+
+    n_data = len(y)
+    n_params = len(p0)
+
+    if n_data <= n_params:
+        raise ValueError("Need more data points than fit parameters to compute reduced chi-squared.")
+
+    def chi2(params):
+        y_model = model(x, params)
+        return np.sum(((y - y_model) / yerr)**2)
+
+    def reduced_chi2(params):
+        dof = n_data - n_params
+        return chi2(params) / dof
+
+    result = minimize(reduced_chi2, p0, bounds=bounds)
+
+    if not result.success:
+        print("Warning: minimizer did not fully converge.")
+        print(result.message)
+    
+    best_params = result.x
+    y_fit = model(x, best_params)
+    chi2_val = chi2(best_params)
+    dof = n_data - n_params
+    red_chi2_val = chi2_val / dof
+
+    print("Best-fit parameters:")
+    for i, p in enumerate(best_params):
+        print(f"p[{i}] = {p:.6g}")
+
+    print(f"\nChi-squared = {chi2_val:.6g}")
+    print(f"Degrees of freedom = {dof}")
+    print(f"Reduced chi-squared = {red_chi2_val:.6g}")
+
+    if do_plot:
+        x_smooth = np.linspace(np.min(x), np.max(x), 1000)
+        y_smooth = model(x_smooth, best_params)
+
+        plt.figure(figsize=(8, 5))
+        plt.errorbar(x, y, fmt='x', capsize=3, label='Bin centres', color='red')
+        plt.plot(x_smooth, y_smooth, label='Best fit', color='green')
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+        plt.title(title)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+    return {
+        'params': best_params,
+        'chi2': chi2_val,
+        'reduced_chi2': red_chi2_val,
+        'dof': dof,
+        'y_fit': y_fit,
+        'optimizer_result': result
+    }
+
+
