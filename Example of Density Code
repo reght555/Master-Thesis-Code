@@ -1,0 +1,113 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+data_dict = {}
+txt = '3x3.txt' # Example file change when using.
+# Same dictionary used to read file within STM model.
+with open(txt, 'r') as file:
+    for line in file:
+        parts = line.strip().split()
+        
+        #extracts coordinates and creates a dictionary key
+        key = parts[0]
+        coordinates = np.round((float(parts[1]), float(parts[2]), float(parts[3])),3) 
+      
+        if key in data_dict:
+            data_dict[key].append(coordinates)
+        else:
+            data_dict[key] = [coordinates]
+
+pts = np.vstack(list(data_dict.values())) # a giant dictionary of atomic coordinates from file
+
+yb_coords = np.vstack(data_dict["In"])
+yb_coords = np.vstack(data_dict["In"])
+
+def planes_finder(eps=0.35): #function to search through dictionary of coords and find yb planes, eps is a parameter used to cut off atoms and seperate planes
+    yb = np.vstack(data_dict["In"])
+
+    mask = (yb[:,2] >= 46.5) & (yb[:,2] <= 73)
+    yb = yb[mask]
+    yb = yb[np.argsort(yb[:,2])]
+    planes = []
+    current_plane = [yb[0]]
+
+    for i in range(1, len(yb)):
+        if abs(yb[i,2] - np.mean([p[2] for p in current_plane])) <= eps:
+            current_plane.append(yb[i])
+        else:
+            planes.append(np.array(current_plane))
+            current_plane = [yb[i]]
+
+    planes.append(np.array(current_plane))
+
+    return planes
+
+def planes_finder1(eps=0.25): #Literally the same function this time used on In
+    yb = np.vstack(data_dict["Yb"])
+
+    mask = (yb[:,2] >= 46.5) & (yb[:,2] <= 73)
+    yb = yb[mask]
+    yb = yb[np.argsort(yb[:,2])]
+    planes = []
+    current_plane = [yb[0]]
+
+    for i in range(1, len(yb)):
+        if abs(yb[i,2] - np.mean([p[2] for p in current_plane])) <= eps:
+            current_plane.append(yb[i])
+        else:
+            planes.append(np.array(current_plane))
+            current_plane = [yb[i]]
+
+    planes.append(np.array(current_plane))
+
+    return planes
+
+planes = planes_finder()
+planes_yb= planes_finder1()
+
+def plane_area(plane): # takes cross product of coplanar atoms
+    x = plane[:,0]
+    y = plane[:,1]
+    return (x.max() - x.min()) * (y.max() - y.min())
+
+def plane_density(plane): #literally function to divide number of atoms by area
+    x=len(plane)
+    rho=len(plane)/plane_area(plane)
+    return rho
+
+plt.figure(figsize=(3.5, 9)) 
+
+for i in range(0,len(planes)-1):
+    #plt.hlines(planes[i][0][2], 0, plane_density(planes[i]), linewidth=1.2, color='red',  label='In' if i == 0 else None)
+for j in range(0,len(planes_yb)-1):
+    plt.hlines(planes_yb[j][0][2], 0, plane_density(planes_yb[j]), linewidth=2, color='blue',  label='Yb' if j == 0 else None)
+    
+# Some personal plotting choices to make narrow density plots showing height versus areal density.
+plt.plot()
+plt.title('Arial density of Yb atoms')
+plt.legend()
+
+import matplotlib.ticker as ticker
+
+ax = plt.gca()
+
+
+ax.yaxis.set_major_locator(ticker.MultipleLocator(2))
+
+
+ax.yaxis.set_minor_locator(ticker.MultipleLocator(0.5))
+
+
+ax.minorticks_on()
+
+
+ax.tick_params(axis='y', which='major', length=6, width=1.2, direction='in')
+ax.tick_params(axis='y', which='minor', length=3, width=1.0, direction='in')
+
+
+ax.tick_params(axis='x', direction='in')
+
+plt.xlabel(r'Atom density (atoms / $\mathrm{\AA}^2$)')
+plt.ylabel(r'Z position in (111) basis ($\mathrm{\AA}$)')
+
+
