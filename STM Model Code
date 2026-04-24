@@ -1,0 +1,87 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import re
+
+#Inputs
+txt = "3x3.txt" #Example text file imported
+
+dz = 0.25      # plane thickness (Å)
+z_start = 74.1 # center of the first plane you want to visualise
+planeNum = 2     # number of planes modelled
+direction = 1       # Plane direction: -1 = next planes lower z, +1 = higher z
+
+# This code is not implicetly needed for the model rather is simply the way in which we decoded Vesta text file labelling
+def norm_symbol(s):
+    m = re.match(r"([A-Za-z]+)", s.strip())
+    sym = m.group(1) if m else s.strip()
+    return sym[0].upper() + sym[1:].lower() if len(sym) > 1 else sym.upper()
+
+# Creates a dictionary from the decoded data so it can be called upon without having to recall the text file and decode
+data_dict = {}
+with open(txt, "r") as file:
+    for line in file:
+        parts = line.strip().split()
+        if len(parts) < 4:
+            continue
+        key = norm_symbol(parts[0])
+        coord = np.array([float(parts[1]), float(parts[2]), float(parts[3])], float)
+        data_dict.setdefault(key, []).append(coord)
+
+for k in list(data_dict.keys()):
+    data_dict[k] = np.vstack(data_dict[k])
+
+print("Keys found:", sorted(data_dict.keys()))
+
+def select_centered_slab(arr, zc, dz):
+    """Return points with z in [zc-dz/2, zc+dz/2]."""
+    if arr.size == 0:
+        return arr
+    lo, hi = zc - dz/2, zc + dz/2
+    m = (arr[:, 2] >= lo) & (arr[:, 2] <= hi)
+    return arr[m]
+
+# Defines the plane centers used
+depth = np.array([z_start + direction*i*dz for i in range(planeNum)], float)
+
+# Builds 3D model from the dictionary data so we can visualise the atomic positions when adding gaussians
+model = {}
+for zc in depth:
+    Ag = select_centered_slab(data_dict["Ag"], zc, dz) if "Ag" in data_dict else np.empty((0,3))
+    In = select_centered_slab(data_dict["In"], zc, dz) if "In" in data_dict else np.empty((0,3))
+    Yb = select_centered_slab(data_dict["Yb"], zc, dz) if "Yb" in data_dict else np.empty((0,3))
+    model[zc] = [Ag, In, Yb]
+    print(f"Plane centered at z={zc:.3f} includes [{zc-dz/2:.3f}, {zc+dz/2:.3f}]"
+          f"  -> Ag={len(Ag)} In={len(In)} Yb={len(Yb)}")
+
+# Plots a Gaussian on each of identified atomic positions from the above step and plots
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
+
+clrs = ["r", "b", "g"] #literally the colour of the LHS plot showing atoms alons
+bias = [1, 1, 2] # Relates the strength og the gaussian ranges from 0-2 accepted
+s = [4, 4, 5] # The actual spacial extent of the gaussian derived from atom valance shell diameter.
+
+x = np.linspace(-100, 100, 256)
+X, Y = np.meshgrid(x, x)
+Zimg = np.zeros_like(X, float)
+
+for j, zc in enumerate(depth):
+    for i, key in enumerate(["Ag", "In", "Yb"]):
+        points = model[zc][i]
+        if points.shape[0] == 0:
+            continue
+
+        for x0, y0, _ in points:
+            Zimg += bias[i] * np.exp(-((X-x0)**2 + (Y-y0)**2) / (2*s[i]**2))
+
+        ax1.scatter(points[:,0], points[:,1], c=clrs[i], s=s[i]*50, edgecolors="k", zorder=j)
+
+mx = np.max(Zimg)
+if mx > 0:
+    Zimg /= mx
+else:
+    print("Warning: Zimg stayed zero (no atoms contributed).") # Line added to prevent an error which was popping up in which no atoms appearing would cause the simulation to fail to run for a slab.
+
+ax2.imshow(Zimg, extent=[-100, 100, -100, 100], origin="lower", cmap="hot")
+ax1.axis("square")
+ax1.set_ylim([-75, 75])
+plt.show()
