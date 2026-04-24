@@ -1,0 +1,209 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from collections import Counter
+
+
+filename = "3x3.txt"
+
+# Another simple file reader and sorter of points into a dictionary
+def load_structure(filename, elements_of_interest=("Ag", "In", "Yb")):
+    records = []
+
+    with open(filename, "r") as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+
+            el = parts[0]
+            if el not in elements_of_interest:
+                continue
+
+            try:
+                x, y, z = map(float, parts[1:4])
+            except ValueError:
+                continue
+
+            records.append((el, x, y, z))
+
+    dtype = [("element", "U4"), ("x", float), ("y", float), ("z", float)]
+    return np.array(records, dtype=dtype) 
+
+def slab_mask(data, z0, dz): #searches through dictionary to identify atoms in region z0 around z point specified
+    return (data["z"] >= z0 - dz) & (data["z"] <= z0 + dz)
+
+
+def slab_counts(data, z0, dz, elements=("Ag", "In", "Yb")): #Function counts the number of each atom
+    mask = slab_mask(data, z0, dz)
+    slab = data[mask]
+    counts = {el: 0 for el in elements}
+    counts.update(Counter(slab["element"]))
+    counts = {el: counts.get(el, 0) for el in elements}
+    total = sum(counts.values())
+
+    return counts, total, slab
+
+def slab_composition_percent(data, z0, dz, elements=("Ag", "In", "Yb")):
+    #Works out percentage composition from count function for a specific z±z0 slab
+    counts, total, slab = slab_counts(data, z0, dz, elements)
+
+    if total == 0:
+        comp = {el: np.nan for el in elements}
+    else:
+        comp = {el: 100.0 * counts[el] / total for el in elements}
+
+    return counts, comp, total, slab
+
+def print_slab_report(data, z0, dz, elements=("Ag", "In", "Yb")):
+#function to display ordered list of compositions for comparison when called
+
+    counts, comp, total, _ = slab_composition_percent(data, z0, dz, elements)
+
+    print(f"Slab centred at z = {z0:.4f} with half-width dz = {dz:.4f}")
+    print(f"z-range = [{z0-dz:.4f}, {z0+dz:.4f}]")
+    print(f"Total atoms in slab = {total}")
+
+    if total == 0:
+        print("No atoms in this slab.")
+        return
+
+    print("\nCounts:")
+    for el in elements:
+        print(f"  {el}: {counts[el]}")
+
+    print("\nComposition (%):")
+    for el in elements:
+        print(f"  {el}: {comp[el]:.4f}")
+
+    print(f"\nSum = {sum(comp.values()):.4f}")
+
+def simplest_ratio_from_counts(counts, elements=("Ag", "In", "Yb")):
+    # So this converts composition to a simplest ratio ie 1:2:2 from 2:4:4 using the atom compositions
+    vals = [counts[el] for el in elements if counts[el] > 0]
+
+    if len(vals) == 0:
+        return {el: np.nan for el in elements}
+
+    m = min(vals)
+    return {el: counts[el] / m if counts[el] > 0 else 0.0 for el in elements}
+
+
+def print_ratio_report(data, z0, dz, elements=("Ag", "In", "Yb")):
+    counts, comp, total, _ = slab_composition_percent(data, z0, dz, elements)
+    ratio = simplest_ratio_from_counts(counts, elements)
+
+    print_slab_report(data, z0, dz, elements)
+
+    if total > 0:
+        print("\nRatio from raw counts (relative to smallest non-zero count):")
+        print("  " + " : ".join(f"{ratio[el]:.4f}" for el in elements))
+
+def scan_composition_vs_z(data, dz, zmin=None, zmax=None, nz=800, elements=("Ag", "In", "Yb")):
+    
+    all_z = data["z"]
+
+    if zmin is None:
+        zmin = np.min(all_z)
+    if zmax is None:
+        zmax = np.max(all_z)
+
+    z_centres = np.linspace(zmin, zmax, nz)
+
+    comp_dict = {el: [] for el in elements}
+    totals = []
+
+    for z0 in z_centres:
+        counts, comp, total, _ = slab_composition_percent(data, z0, dz, elements)
+        totals.append(total)
+        for el in elements:
+            comp_dict[el].append(comp[el])
+
+    for el in elements:
+        comp_dict[el] = np.array(comp_dict[el])
+    totals = np.array(totals)
+
+    return z_centres, comp_dict, totals
+
+def plot_composition_vs_z(z_centres, comp_dict, bulk=None):
+   # Plots the percent composition ratio ie 42:42:16 through the structure for all slabs
+    plt.figure(figsize=(10, 6))
+
+    for el in comp_dict:
+        plt.plot(z_centres, comp_dict[el], label=el)
+
+    if bulk is not None:
+        for el, val in bulk.items():
+            plt.axhline(val, linestyle="--", linewidth=1, alpha=0.7)
+
+    plt.xlabel("z")
+    plt.ylabel("Composition (%)")
+    plt.title("Slab composition vs z")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+def find_best_matching_slabs(data, target, dz, zmin=None, zmax=None, nz=800,
+                             elements=("Ag", "In", "Yb"), top_n=10):
+   # vector function that searches through slabs to match best composition to an input goal composition
+    z_centres, comp_dict, totals = scan_composition_vs_z(
+        data, dz=dz, zmin=zmin, zmax=zmax, nz=nz, elements=elements
+    )
+
+    results = []
+
+    for i, z0 in enumerate(z_centres):
+        if np.isnan([comp_dict[el][i] for el in elements]).any():
+            continue
+
+        comp = {el: comp_dict[el][i] for el in elements}
+        dist = np.sqrt(sum((comp[el] - target[el])**2 for el in elements))
+
+        counts, _, total, _ = slab_composition_percent(data, z0, dz, elements)
+
+        results.append({
+            "z0": z0,
+            "dz": dz,
+            "distance": dist,
+            "total_atoms": total,
+            "counts": counts,
+            "composition": comp
+        })
+
+    results.sort(key=lambda r: r["distance"])
+    return results[:top_n]
+
+def print_best_matches(results, elements=("Ag", "In", "Yb")):
+    for i, r in enumerate(results, start=1):
+        print(f"\nMatch {i}")
+        print(f"  z0 = {r['z0']:.4f}, dz = {r['dz']:.4f}")
+        print(f"  distance from target = {r['distance']:.4f}")
+        print(f"  total atoms = {r['total_atoms']}")
+        print("  counts:", ", ".join(f"{el}={r['counts'][el]}" for el in elements))
+        print("  composition (%):", ", ".join(f"{el}={r['composition'][el]:.4f}" for el in elements))
+
+
+data = load_structure(filename, elements_of_interest=elements_of_interest)
+
+
+z0 = 53.48
+dz = 0.75
+
+print_ratio_report(data, z0=z0, dz=dz, elements=elements_of_interest)
+
+# Example use plotting composition throughout the entire text file
+bulk = {"Ag": 42.0, "In": 42.0, "Yb": 16.0}
+z_centres, comp_dict, totals = scan_composition_vs_z(data, dz=dz, elements=elements_of_interest)
+plot_composition_vs_z(z_centres, comp_dict, bulk=bulk)
+
+# Example used to find closest slabs to leis data
+target_surface = {"Ag": 30.81521739, "In": 58.45699392 , "Yb": 16.53377265}
+best = find_best_matching_slabs(
+    data,
+    target=target_surface,
+    dz=dz,
+    nz=2000,      # increase for finer z-search
+    elements=elements_of_interest,
+    top_n=10
+)
+print_best_matches(best, elements=elements_of_interest)
+
