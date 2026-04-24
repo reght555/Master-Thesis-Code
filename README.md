@@ -1,9 +1,10 @@
 # Master-Thesis-Code
 A full list of all code used during my master's project.
 
-The following repository contains 3 primary files separating out distinct stages in the project development. These include:
+The following repository contains 4 primary files separating out distinct stages in the project development. These include:
 1) STM model Code
-2) Plane Slab Code
-3) Analysis Code
+2) LEIS Slab Code
+3) Chi-Squared Analysis Code
+4) Density Code
 
-These larger folders are seperated into smaller labelled subfolders containing individual programs. All code is described at the beginning of the file to allow easy use. Variables which are not clearly labelled ie k1 will always have a # comment outlining their function within the code itself. 
+These larger folders contain all the code used other than basic graphing code, all functions are labelled with an example text file and dictionary given to allow the reader to easily modify the functions to fit their own data. 
